@@ -58,7 +58,6 @@ def download_from_google_drive():
     return True
 
 
-download_from_google_drive()
 
 # LSTMCRFClassifier
 class LSTMCRFClassifier(nn.Module):
