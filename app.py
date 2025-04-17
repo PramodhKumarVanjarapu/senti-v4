@@ -51,7 +51,6 @@ def download_from_google_drive():
                 try:
                     url = f"https://drive.google.com/uc?export=download&id={file_id}"
                     gdown.download(url, file_name, quiet=False)
-                    st.success(f"Downloaded {file_name}")
                 except Exception as e:
                     st.error(f"Failed to download {file_name}: {str(e)}")
                     raise
