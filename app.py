@@ -21,6 +21,7 @@ from scipy.stats import gaussian_kde
 from io import BytesIO
 import gdown
 import os
+from emojipy import Emoji
 import warnings
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
