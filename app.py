@@ -21,8 +21,9 @@ from scipy.stats import gaussian_kde
 from io import BytesIO
 import gdown
 import os
-from emojipy import Emoji
 import warnings
+
+from emojipy import Emoji
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -75,7 +76,7 @@ class LSTMCRFClassifier(nn.Module):
         c0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1),
                          batch_size, self.hidden_size).to(x.device)
         lstm_out, _ = self.lstm(x, (h0, c0))
-        lstm_out顯 = self.dropout(lstm_out)
+        lstm_out = self.dropout(lstm_out)
         emissions = self.fc(lstm_out)
         mask = torch.ones(batch_size, seq_len, dtype=torch.bool).to(x.device)
         if tags is not None:
@@ -302,6 +303,7 @@ def get_word_level_sentiment(text):
     analyzer = SentimentIntensityAnalyzer()
     nlp = load_language_model(text)
     doc = nlp(text)
+    
     word_sentiments = []
     for token in doc:
         if token.text.lower() not in STOPWORDS and token.pos_ in ["NOUN", "ADJ", "VERB", "ADV"]:
@@ -313,145 +315,15 @@ def get_word_level_sentiment(text):
                 "Negative": scores["neg"],
                 "Neutral": scores["neu"]
             })
+    
     return pd.DataFrame(word_sentiments)
-
-def generate_high_quality_visualizations(filtered_df, word_sentiments_df, tab, key_suffix, chart_options):
-    plt.rcParams['savefig.dpi'] = 300
-    plt.rcParams['figure.dpi'] = 150
-    if tab.button(f"Generate High-Quality Visualizations", key=f"gen_viz_{key_suffix}"):
-        plots_container = tab.container()
-        plots_container.write("Download high-quality visualizations:")
-        col1, col2 = plots_container.columns(2)
-        figs = []
-        if "Sentiment Distribution" in chart_options:
-            fig1 = plt.figure(figsize=(8, 6))
-            sentiment_counts = filtered_df["Sentiment"].value_counts().reset_index()
-            sentiment_counts.columns = ["Sentiment", "Count"]
-            plt.pie(
-                sentiment_counts["Count"],
-                labels=sentiment_counts["Sentiment"],
-                colors=[COLORS.get(s.lower(), "#999999") for s in sentiment_counts["Sentiment"]],
-                autopct='%1.1f%%',
-                startangle=90,
-                wedgeprops=dict(width=0.6, edgecolor='white')
-            )
-            plt.title("Sentiment Distribution", fontsize=16, pad=20)
-            plt.tight_layout()
-            fig1.patch.set_alpha(0.0)
-            figs.append(("sentiment_distribution", fig1))
-        if "Word Sentiment Heatmap" in chart_options and not word_sentiments_df.empty:
-            fig2 = plt.figure(figsize=(8, max(6, len(word_sentiments_df) * 0.5)))
-            pivot_df = word_sentiments_df.pivot_table(
-                index="Word",
-                values=["Positive", "Neutral", "Negative"],
-                aggfunc="mean"
-            ).fillna(0)
-            if not pivot_df.empty:
-                sns.heatmap(
-                    pivot_df,
-                    cmap="RdYlGn",
-                    annot=True,
-                    fmt=".2f",
-                    linewidths=0.5,
-                    linecolor='lightgray',
-                    cbar_kws={'label': 'Sentiment Score', 'shrink': 0.8}
-                )
-                plt.title("Word-Level Sentiment Scores", fontsize=16, pad=20)
-                plt.xlabel("Sentiment", fontsize=12)
-                plt.ylabel("Word", fontsize=12)
-                plt.tight_layout()
-                fig2.patch.set_alpha(0.0)
-                figs.append(("word_sentiment_heatmap", fig2))
-        if "VADER Sentiment Line Chart" in chart_options and hasattr(filtered_df, 'vader_scores'):
-            fig3 = plt.figure(figsize=(8, 6))
-            sentiment_types = ["Positive", "Neutral", "Negative", "Compound"]
-            scores = [
-                filtered_df.vader_scores.get("pos", 0),
-                filtered_df.vader_scores.get("neu", 0),
-                filtered_df.vader_scores.get("neg", 0),
-                filtered_df.vader_scores.get("compound", 0)
-            ]
-            plt.plot(sentiment_types, scores, marker="o", color=COLORS["primary"], linewidth=2)
-            plt.ylim(-1, 1)
-            plt.title("VADER Sentiment Scores", fontsize=16, pad=20)
-            plt.ylabel("Score", fontsize=12)
-            plt.grid(True, linestyle="--", alpha=0.5)
-            plt.xticks(rotation=45, ha="right")
-            plt.tight_layout()
-            fig3.patch.set_alpha(0.0)
-            figs.append(("vader_sentiment_line", fig3))
-        if "VADER Sentiment Pie Chart" in chart_options and hasattr(filtered_df, 'vader_scores'):
-            fig4 = plt.figure(figsize=(8, 6))
-            pie_labels = ["Positive", "Neutral", "Negative"]
-            pie_scores = [
-                filtered_df.vader_scores.get("pos", 0),
-                filtered_df.vader_scores.get("neu", 0),
-                filtered_df.vader_scores.get("neg", 0)
-            ]
-            pie_colors = [COLORS["positive"], COLORS["neutral"], COLORS["negative"]]
-            plt.pie(
-                pie_scores,
-                labels=pie_labels,
-                colors=pie_colors,
-                autopct="%1.1f%%",
-                startangle=90,
-                wedgeprops=dict(edgecolor="white")
-            )
-            plt.title("VADER Sentiment Distribution", fontsize=16, pad=20)
-            plt.tight_layout()
-            fig4.patch.set_alpha(0.0)
-            figs.append(("vader_sentiment_pie", fig4))
-        if "Word Cloud" in chart_options and not word_sentiments_df.empty:
-            fig5 = plt.figure(figsize=(8, 6))
-            sentiment_weights = word_sentiments_df.set_index("Word")["Compound"].to_dict()
-            def sentiment_color_func(word, font_size, position, orientation, random_state=None, **kwargs):
-                sentiment_score = sentiment_weights.get(word, 0)
-                if sentiment_score > 0:
-                    return COLORS["positive"]
-                elif sentiment_score < 0:
-                    return COLORS["negative"]
-                else:
-                    return COLORS["neutral"]
-            word_freq = word_sentiments_df["Word"].value_counts().to_dict()
-            wordcloud_text = " ".join([word + " " * min(int(freq * 10), 50) for word, freq in word_freq.items()])
-            wordcloud = WordCloud(
-                width=600,
-                height=300,
-                background_color='white',
-                color_func=sentiment_color_func,
-                prefer_horizontal=0.9,
-                max_words=50,
-                contour_width=1,
-                contour_color='gray',
-                collocations=False
-            ).generate(wordcloud_text)
-            plt.imshow(wordcloud, interpolation='bilinear')
-            plt.axis("off")
-            plt.title("Sentiment-Based Coloring", fontsize=16, pad=20)
-            plt.tight_layout()
-            fig5.patch.set_alpha(0.0)
-            figs.append(("word_cloud", fig5))
-        for name, fig in figs:
-            buf = BytesIO()
-            fig.savefig(buf, format="png", bbox_inches="tight", transparent=True)
-            buf.seek(0)
-            col = col1 if name in ["sentiment_distribution", "vader_sentiment_line"] else col2
-            col.image(buf, caption=name.replace("_", " ").title(), width=300)
-            buf.seek(0)
-            col.download_button(
-                label=f"Download {name.replace('_', ' ').title()}",
-                data=buf,
-                file_name=f"{name}.png",
-                mime="image/png"
-            )
-            plt.close(fig)
-        plt.rcParams['savefig.dpi'] = 100
-        plt.rcParams['figure.dpi'] = 100
 
 def generate_sentiment_visualizations(label, confidence, probs, vader_scores, word_sentiments_df, tab):
     tab.subheader("Overall Sentiment Analysis")
+    
     col1, col2, col3 = tab.columns(3)
     label = label.lower()
+
     fig1, ax1 = plt.subplots(figsize=(4, 3))
     sentiment_types = ["Positive", "Neutral", "Negative", "Compound"]
     scores = [vader_scores["pos"], vader_scores["neu"], vader_scores["neg"], vader_scores["compound"]]
@@ -464,6 +336,7 @@ def generate_sentiment_visualizations(label, confidence, probs, vader_scores, wo
     fig1.tight_layout()
     col1.pyplot(fig1)
     plt.close()
+
     if not word_sentiments_df.empty:
         fig2, ax2 = plt.subplots(figsize=(6, 4))
         pivot_df = word_sentiments_df.pivot_table(
@@ -487,6 +360,7 @@ def generate_sentiment_visualizations(label, confidence, probs, vader_scores, wo
             fig2.tight_layout()
             col2.pyplot(fig2)
             plt.close()
+
     fig3, ax3 = plt.subplots(figsize=(4, 3))
     pie_labels = ["Positive", "Neutral", "Negative"]
     pie_scores = [vader_scores["pos"], vader_scores["neu"], vader_scores["neg"]]
@@ -503,10 +377,12 @@ def generate_sentiment_visualizations(label, confidence, probs, vader_scores, wo
     fig3.tight_layout()
     col3.pyplot(fig3)
     plt.close()
+
     if not word_sentiments_df.empty:
         tab.subheader("Word-Level Sentiment Analysis")
         tab.markdown("Sentiment scores for significant words (nouns, adjectives, verbs, adverbs).")
         tab.dataframe(word_sentiments_df[["Word", "Compound", "Positive", "Negative", "Neutral"]])
+        
         csv = word_sentiments_df.to_csv(index=False)
         tab.download_button(
             label="Download Word-Level Sentiment as CSV",
@@ -519,6 +395,7 @@ def display_aspect_sentiments(aspect_sentiments, tab):
     if not aspect_sentiments:
         tab.warning("No aspects were detected in the text.")
         return
+    
     data = []
     for aspect, sentiment, confidence, clause in aspect_sentiments:
         data.append({
@@ -528,6 +405,7 @@ def display_aspect_sentiments(aspect_sentiments, tab):
             "Source Text": clause
         })
     df = pd.DataFrame(data)
+    
     tab.subheader("Filter Aspects")
     all_aspects = sorted(df["Aspect"].unique())
     selected_aspects = tab.multiselect(
@@ -537,11 +415,14 @@ def display_aspect_sentiments(aspect_sentiments, tab):
         key="aspect_filter"
     )
     filtered_df = df[df["Aspect"].isin(selected_aspects)]
+    
     if filtered_df.empty:
         tab.warning("No data for selected aspects.")
         return
+    
     tab.subheader("Detected Aspects and Sentiments")
     tab.dataframe(filtered_df)
+    
     csv = filtered_df.to_csv(index=False)
     tab.download_button(
         label="Download Aspect Data as CSV",
@@ -549,6 +430,7 @@ def display_aspect_sentiments(aspect_sentiments, tab):
         file_name="aspect_sentiment_analysis.csv",
         mime="text/csv"
     )
+    
     if len(filtered_df) > 0:
         tab.subheader("Visualization Options")
         chart_options = tab.multiselect(
@@ -557,9 +439,11 @@ def display_aspect_sentiments(aspect_sentiments, tab):
             default=["Sentiment Distribution", "Aspect-Sentiment Heatmap"],
             key="chart_options"
         )
+        
         if chart_options:
             tab.subheader("Sentiment Visualization")
             col1, col2 = tab.columns(2)
+            
             if "Sentiment Distribution" in chart_options:
                 sentiment_counts = filtered_df["Sentiment"].value_counts().reset_index()
                 sentiment_counts.columns = ["Sentiment", "Count"]
@@ -575,6 +459,7 @@ def display_aspect_sentiments(aspect_sentiments, tab):
                 plt.title("Sentiment Distribution")
                 col1.pyplot(plt)
                 plt.close()
+            
             if "Aspect-Sentiment Heatmap" in chart_options:
                 pivot_df = filtered_df.pivot_table(
                     index="Aspect",
@@ -604,6 +489,7 @@ def display_aspect_sentiments(aspect_sentiments, tab):
                     plt.ylabel("Aspect", fontsize=10)
                     col2.pyplot(plt)
                     plt.close()
+            
             if "Aspect Frequency" in chart_options:
                 aspect_stats = filtered_df.groupby("Aspect").agg({
                     "Confidence": "mean",
@@ -636,6 +522,7 @@ def display_aspect_sentiments(aspect_sentiments, tab):
                 fig.tight_layout()
                 col1.pyplot(fig)
                 plt.close()
+            
             if "Word Cloud" in chart_options:
                 aspect_stats = filtered_df.groupby("Aspect").agg({
                     "Confidence": "mean",
@@ -645,12 +532,14 @@ def display_aspect_sentiments(aspect_sentiments, tab):
                     sentiment_weights = filtered_df.groupby("Aspect")["Sentiment"].apply(
                         lambda x: sum(1 if s == "positive" else -1 if s == "negative" else 0 for s in x)
                     ).to_dict()
+                    
                     wc_color_method = col2.radio(
                         "WordCloud Coloring Method:",
                         ["Sentiment", "Frequency"],
                         key="wc_color_method",
                         horizontal=True
                     )
+                    
                     def sentiment_color_func(word, font_size, position, orientation, random_state=None, **kwargs):
                         sentiment_score = sentiment_weights.get(word, 0)
                         if sentiment_score > 0:
@@ -659,13 +548,16 @@ def display_aspect_sentiments(aspect_sentiments, tab):
                             return COLORS["negative"]
                         else:
                             return COLORS["neutral"]
+                    
                     def frequency_color_func(word, font_size, position, orientation, random_state=None, **kwargs):
                         intensity = (font_size / 70.0)
                         r = int(COLORS["primary"][1:3], 16)
                         g = int(COLORS["primary"][3:5], 16)
                         b = int(COLORS["primary"][5:7], 16)
                         return f"rgb({r},{g},{int(b * intensity + 100)})"
+                    
                     color_func = sentiment_color_func if wc_color_method == "Sentiment" else frequency_color_func
+                    
                     aspect_text = " ".join([row["Aspect"] + " " * row["Count"] for _, row in aspect_stats.iterrows()])
                     wordcloud = WordCloud(
                         width=800,
@@ -678,16 +570,17 @@ def display_aspect_sentiments(aspect_sentiments, tab):
                         contour_color='gray',
                         collocations=False
                     ).generate(aspect_text)
+                    
                     plt.figure(figsize=(6, 3))
                     plt.imshow(wordcloud, interpolation='bilinear')
                     plt.axis("off")
                     plt.title(f"Aspect Word Cloud ({wc_color_method} Based)", pad=15)
                     col2.pyplot(plt)
                     plt.close()
-        generate_high_quality_visualizations(filtered_df, pd.DataFrame(), tab, "aspect", chart_options)
 
 def process_batch_data(uploaded_file, model_dependencies, text_column):
     model, label_encoder, tokenizer, bert_model, pca, emoji_to_word, final_dict = model_dependencies
+    
     if uploaded_file.name.endswith('.csv'):
         df = pd.read_csv(uploaded_file)
     elif uploaded_file.name.endswith(('.xls', '.xlsx')):
@@ -697,12 +590,15 @@ def process_batch_data(uploaded_file, model_dependencies, text_column):
     else:
         st.error("Unsupported file format.")
         return None
+    
     if text_column not in df.columns:
         st.error(f"Selected column '{text_column}' not found in file.")
         return None
+        
     df = df[[text_column]].rename(columns={text_column: 'text'})
     results = []
     progress_bar = st.progress(0)
+    
     for idx, row in df.iterrows():
         text = str(row['text'])
         if text.strip():
@@ -719,6 +615,7 @@ def process_batch_data(uploaded_file, model_dependencies, text_column):
                 'negative_prob': probs[0]
             })
         progress_bar.progress((idx + 1) / len(df))
+    
     progress_bar.empty()
     return pd.DataFrame(results)
 
@@ -726,6 +623,7 @@ def display_batch_results(results_df, tab):
     if results_df is None or results_df.empty:
         tab.warning("No results to display.")
         return
+    
     tab.subheader("Filter Sentiments")
     all_sentiments = sorted(results_df["sentiment"].unique())
     selected_sentiments = tab.multiselect(
@@ -735,11 +633,14 @@ def display_batch_results(results_df, tab):
         key="sentiment_filter"
     )
     filtered_df = results_df[results_df["sentiment"].isin(selected_sentiments)]
+    
     if filtered_df.empty:
         tab.warning("No data for selected sentiments.")
         return
+    
     tab.subheader("Batch Analysis Results")
     tab.dataframe(filtered_df)
+    
     csv = filtered_df.to_csv(index=False)
     tab.download_button(
         label="Download Results as CSV",
@@ -747,8 +648,10 @@ def display_batch_results(results_df, tab):
         file_name="sentiment_analysis_results.csv",
         mime="text/csv"
     )
+    
     tab.subheader("Results Summary")
     col1, col2 = tab.columns(2)
+    
     sentiment_counts = filtered_df['sentiment'].value_counts().reset_index()
     sentiment_counts.columns = ['sentiment', 'count']
     plt.figure(figsize=(6, 4))
@@ -763,6 +666,7 @@ def display_batch_results(results_df, tab):
     plt.title("Sentiment Distribution")
     col1.pyplot(plt)
     plt.close()
+    
     plt.figure(figsize=(6, 4))
     for sentiment in ['positive', 'neutral', 'negative']:
         if sentiment in filtered_df['sentiment'].values:
@@ -786,6 +690,7 @@ def display_batch_results(results_df, tab):
     plt.legend()
     col2.pyplot(plt)
     plt.close()
+    
     tab.subheader("Confidence Distribution by Sentiment")
     plt.figure(figsize=(8, 4))
     sns.boxplot(
@@ -799,6 +704,7 @@ def display_batch_results(results_df, tab):
     plt.ylabel("Confidence")
     tab.pyplot(plt)
     plt.close()
+    
     tab.subheader("Sentiment Trend Analysis")
     trend_df = filtered_df.copy()
     trend_df['sentiment_score'] = trend_df['sentiment'].map({'positive': 1, 'neutral': 0, 'negative': -1})
@@ -859,17 +765,23 @@ def main():
     st.set_page_config(page_title="Advanced Sentiment Analysis", page_icon="📊", layout="wide")
     plt.style.use('seaborn-v0_8-whitegrid')
     sns.set_context("notebook", font_scale=1.1)
+    
     @st.cache_resource
     def load_cached_models():
         with st.spinner("Loading models..."):
             return load_model_and_dependencies()
+            
     model_dependencies = load_cached_models()
+    
     plt.clf()
+    
     tab1, tab2, tab3 = st.tabs(["General Sentiment Analysis", "Aspect-Based Analysis", "Batch Processing"])
+    
     with tab1:
         tab1.header("🔍 General Sentiment Analysis")
         tab1.markdown("Enter text to analyze overall sentiment, word-level sentiment, and view detailed visualizations.")
         text_input = tab1.text_area("Enter text:", height=150, key="tab1_text")
+        
         if text_input and tab1.button("Analyze Sentiment", key="analyze_sentiment_tab1"):
             with st.spinner("Analyzing sentiment..."):
                 label, confidence, probs = classify_sentence(text_input, *model_dependencies)
@@ -878,6 +790,7 @@ def main():
                 word_sentiments_df = get_word_level_sentiment(text_input)
                 filtered_df = pd.DataFrame([{"Sentiment": label, "Confidence": confidence}])
                 filtered_df.vader_scores = vader_scores
+                
                 tab1.subheader("Overall Sentiment")
                 sentiment_emoji = get_sentiment_emoji(label)
                 tab1.metric(
@@ -885,9 +798,11 @@ def main():
                     value=f"{label.title()} {sentiment_emoji}",
                     delta=f"Confidence: {confidence:.2%}"
                 )
+                
                 if not word_sentiments_df.empty:
                     tab1.subheader("Word Cloud Visualization")
                     sentiment_weights = word_sentiments_df.set_index("Word")["Compound"].to_dict()
+                    
                     def sentiment_color_func(word, font_size, position, orientation, random_state=None, **kwargs):
                         sentiment_score = sentiment_weights.get(word, 0)
                         if sentiment_score > 0:
@@ -896,8 +811,10 @@ def main():
                             return COLORS["negative"]
                         else:
                             return COLORS["neutral"]
+                    
                     word_freq = word_sentiments_df["Word"].value_counts().to_dict()
                     wordcloud_text = " ".join([word + " " * min(int(freq * 10), 50) for word, freq in word_freq.items()])
+                    
                     wordcloud = WordCloud(
                         width=800,
                         height=400,
@@ -909,29 +826,16 @@ def main():
                         contour_color='gray',
                         collocations=False
                     ).generate(wordcloud_text)
+                    
                     plt.figure(figsize=(6, 3))
                     plt.imshow(wordcloud, interpolation='bilinear')
                     plt.axis("off")
                     plt.title("Word Cloud (Sentiment-Based Coloring)", pad=15)
                     tab1.pyplot(plt)
                     plt.close()
+                
                 generate_sentiment_visualizations(label, confidence, probs, vader_scores, word_sentiments_df, tab1)
-                tab1.subheader("Visualization Options")
-                chart_options = tab1.multiselect(
-                    "Select which visualizations to show:",
-                    options=["Sentiment Distribution", "Word Sentiment Heatmap", "VADER Sentiment Line Chart", "VADER Sentiment Pie Chart", "Word Cloud"],
-                    default=["Sentiment Distribution", "Word Sentiment Heatmap", "VADER Sentiment Line Chart", "VADER Sentiment Pie Chart", "Word Cloud"],
-                    key="chart_options_tab1"
-                )
-                if chart_options:
-                    tab1.subheader("Downloadable Visualizations")
-                    generate_high_quality_visualizations(
-                        filtered_df, 
-                        word_sentiments_df, 
-                        tab1, 
-                        "general", 
-                        chart_options
-                    )
+    
     with tab2:
         tab2.header("🔬 Aspect-Based Sentiment Analysis")
         tab2.markdown("Enter text to detect aspects and their sentiments with interactive charts.")
@@ -940,10 +844,12 @@ def main():
             with st.spinner("Analyzing aspects and sentiments..."):
                 aspect_sentiments = get_aspect_sentiments(absa_text_input)
                 display_aspect_sentiments(aspect_sentiments, tab2)
+    
     with tab3:
         tab3.header("📦 Batch Sentiment Analysis")
         tab3.markdown("Upload a file to process multiple reviews and explore aggregated results.")
         uploaded_file = tab3.file_uploader("Upload file", type=["csv", "xlsx", "xls", "txt"], key="tab3_upload")
+        
         if uploaded_file:
             if uploaded_file.name.endswith('.csv'):
                 preview_df = pd.read_csv(uploaded_file)
@@ -954,13 +860,16 @@ def main():
             else:
                 preview_df = pd.DataFrame({'text': [line.decode('utf-8').strip() for line in uploaded_file if line.strip()]})
                 uploaded_file.seek(0)
+            
             tab3.subheader("Data Preview")
             tab3.dataframe(preview_df.head())
+            
             text_column = tab3.selectbox(
                 "Select the column containing reviews:",
                 options=preview_df.columns,
                 key="tab3_select"
             )
+            
             if tab3.button("Process Batch", key="process_batch_tab3"):
                 with st.spinner("Processing batch data..."):
                     results_df = process_batch_data(uploaded_file, model_dependencies, text_column)
